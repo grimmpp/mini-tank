@@ -1,0 +1,155 @@
+R"=====(
+<HTML>
+    <head>
+        <style>
+            #myCanvas {
+                position: absolute; 
+                margin: 20px; 
+                border: 1px solid #111;
+            }
+        </style>
+        <script>
+            var MAX_RANGE_X = 2048;
+            var MAX_RANGE_Y = 2048;
+            var lastPosition = {x: 0, y: 0};
+            
+            function sendPosition() {
+                //console.log(lastPosition);
+                
+                //*
+                var xhr = new XMLHttpRequest();
+                var url = "/speed?x="+lastPosition.x+"&y="+lastPosition.y;
+                xhr.open('GET', url, true);
+                xhr.send();
+                //*/
+
+                console.log(url);
+                setTimeout(sendPosition, 100);
+            }
+
+            function map(number, originalRangeMin, originalRangeMax, newRangeMin, newRangeMax) {
+                return (number - originalRangeMin) * (newRangeMax - newRangeMin) / (originalRangeMax - originalRangeMin);
+            }
+
+            function updatePosition(canvas, pos) {
+                var x = pos.x - canvas.width/2;
+                var y = pos.y - canvas.height/2;
+
+                x = Math.min(Math.max(x, -canvas.width/2), canvas.width/2);
+                y = Math.min(Math.max(y, -canvas.height/2), canvas.height/2);
+
+                lastPosition.x = Math.round(map(x, 0, canvas.width, -MAX_RANGE_X, MAX_RANGE_X));
+                lastPosition.y = Math.round(map(y, 0, canvas.height, -MAX_RANGE_Y, MAX_RANGE_Y));
+            }
+
+            function getMousePos(canvas, evt) {
+                var rect = canvas.getBoundingClientRect();
+                return {
+                    x: evt.clientX - rect.left,
+                    y: evt.clientY - rect.top
+                };
+            }
+
+            function clearCanvas(mousePos) {
+                var ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                ctx.lineWidth = 1;
+                ctx.setLineDash([4, 12]);
+                ctx.strokeStyle = "#333";
+                
+                ctx.beginPath();
+                ctx.moveTo(canvas.width/2,canvas.height/2);
+                ctx.lineTo(canvas.width,canvas.height/2);
+
+                ctx.moveTo(canvas.width/2,canvas.height/2);
+                ctx.lineTo(0,canvas.height/2);
+
+                ctx.moveTo(canvas.width/2,canvas.height/2);
+                ctx.lineTo(canvas.width/2,canvas.height);
+
+                ctx.moveTo(canvas.width/2,canvas.height/2);
+                ctx.lineTo(canvas.width/2,0);
+                ctx.stroke();
+
+                ctx.lineWidth = 3;
+                ctx.setLineDash([]);
+                ctx.strokeStyle = "red";
+
+                var diff = 25;
+                ctx.beginPath();
+                ctx.moveTo(canvas.width/2-diff,canvas.height/2);
+                ctx.lineTo(canvas.width/2+diff,canvas.height/2);
+
+                ctx.moveTo(canvas.width/2,canvas.height/2-diff);
+                ctx.lineTo(canvas.width/2,canvas.height/2+diff);
+
+                diff2 = 4;
+                ctx.moveTo(canvas.width/2-diff,canvas.height/2+diff2);
+                ctx.lineTo(canvas.width/2-diff,canvas.height/2-diff2);
+
+                ctx.moveTo(canvas.width/2+diff,canvas.height/2+diff2);
+                ctx.lineTo(canvas.width/2+diff,canvas.height/2-diff2);
+
+                ctx.moveTo(canvas.width/2+diff2,canvas.height/2-diff);
+                ctx.lineTo(canvas.width/2-diff2,canvas.height/2-diff);
+
+                ctx.moveTo(canvas.width/2+diff2,canvas.height/2+diff);
+                ctx.lineTo(canvas.width/2-diff2,canvas.height/2+diff);
+                ctx.stroke();
+                
+            }
+
+            function drawPoint(mousePos)  {
+                var canvas = document.getElementById('myCanvas');
+                var ctx = canvas.getContext('2d');
+
+                clearCanvas(canvas);
+
+                var x = mousePos.x;
+                var y = mousePos.y;
+                var innerRadius = 10;
+                var outerRadius = 30;
+                var radius = 30;
+
+                var gradient = ctx.createRadialGradient(x, y, innerRadius, x, y, outerRadius);
+                gradient.addColorStop(0, '#555');
+                gradient.addColorStop(1, '#222');
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, 2 * Math.PI, false);
+                ctx.fillStyle = gradient; 
+                ctx.fill();
+            }
+
+        </script>
+    </head>
+    <body>
+        <canvas id="myCanvas" width=800 height=800></canvas>
+        <script>
+            var canvas = document.getElementById('myCanvas');
+            clearCanvas(canvas);
+            drawPoint({x: canvas.width/2, y: canvas.height/2});
+
+            canvas.addEventListener('mousemove', function (e) {
+                var mousePos = getMousePos(canvas, e);
+                drawPoint(mousePos);
+                updatePosition(canvas, mousePos);
+            });
+
+            canvas.addEventListener('touchmove', function (e) {
+
+                console.log(e);
+
+                var currentY = e.touches ?  e.touches[0].pageY : e.pageY;
+                var currentX = e.touches ?  e.touches[0].pageX : e.pageX;
+
+                var mousePos = getMousePos(canvas, {clientX: currentX, clientY: currentY});
+                drawPoint(mousePos);
+                updatePosition(canvas, mousePos);
+            });
+
+            sendPosition();
+        </script>
+    </body>
+</HTML>
+)====="

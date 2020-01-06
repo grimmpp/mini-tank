@@ -1,0 +1,349 @@
+R"=====(
+<!-- open index.html?dev=true for development -->
+<HTML>
+    <head>
+        <style>
+            #myCanvas {
+                position: relative; 
+                margin: 20px; 
+                border: 1px solid #111;
+            }
+        </style>
+        <script>
+            var MAX_RANGE_X = 1024;
+            var MAX_RANGE_Y = 1024;
+            var lastPosition = {x: 0, y: 0, m1: 0, m2: 0};
+            var DEV_MODE_ENABLED = new URL(window.location.href).searchParams.get("dev");
+            var SEND_DATA_ENABLED = !( new URL(window.location.href).searchParams.get("do-not-send-data") );
+            SEND_DATA_ENABLED &= !DEV_MODE_ENABLED;
+            var LOGGING_ENABLED = new URL(window.location.href).searchParams.get("logging");
+            var SESSION_ID = 0;
+            
+            function sendPosition() {
+                //console.log(lastPosition);
+                
+                var url = "/speed?" +
+                    "sessionId="+SESSION_ID+
+                    "&x="+lastPosition.x+
+                    "&y="+lastPosition.y+
+                    "&m1="+lastPosition.m1+
+                    "&m2="+lastPosition.m2;
+                
+                if (SEND_DATA_ENABLED) {
+                    var xhr = new XMLHttpRequest();
+                    xhr.onreadystatechange = function() {
+                        if (xhr.readyState === 4) {
+                            if (xhr.status === 200) {
+                                updateConnectionStatus("Session established. (SessionID: "+SESSION_ID+")", "green");
+                            }
+                            else {
+                                SEND_DATA_ENABLED = false;
+                                updateConnectionStatus("Session lost. (Please, reload plage.)", "red");
+                            } 
+                        }
+                    }
+                    xhr.open('GET', url, true);
+                    xhr.send();
+                }
+                
+                if (LOGGING_ENABLED) console.log(url);
+                if (SEND_DATA_ENABLED || LOGGING_ENABLED) {
+                    setTimeout(sendPosition, 100);
+                }
+            }
+
+            function map(number, originalRangeMin, originalRangeMax, newRangeMin, newRangeMax) {
+                return (number - originalRangeMin) * (newRangeMax - newRangeMin) / (originalRangeMax - originalRangeMin);
+            }
+
+            function updatePosition(canvas, pos) {
+                var x = pos.x - canvas.width/2;
+                var y = pos.y - canvas.height/2;
+
+                x = Math.min(Math.max(x, -canvas.width/2), canvas.width/2);
+                y = Math.min(Math.max(y, -canvas.height/2), canvas.height/2);
+
+                lastPosition.x = Math.round(map(x, 0, canvas.width, -MAX_RANGE_X, MAX_RANGE_X));
+                lastPosition.y = Math.round(map(y, 0, canvas.height, -MAX_RANGE_Y, MAX_RANGE_Y));
+
+                var motorControl = calcMotorPower(canvas, pos);
+                // console.log("motor control:" + JSON.stringify(motorControl));
+
+                lastPosition.m1 = motorControl.m1;
+                lastPosition.m2 = motorControl.m2;
+
+                updateValues(lastPosition);
+            }
+
+            function getMousePos(canvas, evt) {
+                var rect = canvas.getBoundingClientRect();
+                return {
+                    x: evt.clientX - rect.left,
+                    y: evt.clientY - rect.top
+                };
+            }
+
+            function clearCanvas(mousePos) {
+                var ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                ctx.lineWidth = 1;
+                ctx.setLineDash([4, 12]);
+                ctx.strokeStyle = "#333";
+                
+                var xPos = [ 
+                    5*canvas.width/12, 
+                    7*canvas.width/12
+                ];
+
+                var yPos = [ 
+                    5*canvas.height/12, 
+                    7*canvas.height/12
+                ];
+
+                ctx.beginPath();
+
+                yPos.forEach((y) => {
+                    ctx.moveTo(canvas.width, y);
+                    ctx.lineTo(0, y);
+                });
+
+                ctx.stroke();
+
+                xPos.forEach((x) => {
+                    ctx.moveTo(x,canvas.height);
+                    ctx.lineTo(x,0);
+                });
+                ctx.stroke();
+
+                drawZeroPoint(canvas);
+
+                ctx.save();
+            }
+
+            function drawZeroPoint(canvas) {
+                var ctx = canvas.getContext('2d');
+
+                ctx.lineWidth = 3;
+                ctx.setLineDash([]);
+                ctx.strokeStyle = "red";
+
+                var diff = 25;
+                ctx.beginPath();
+                ctx.moveTo(canvas.width/2-diff,canvas.height/2);
+                ctx.lineTo(canvas.width/2+diff,canvas.height/2);
+
+                ctx.moveTo(canvas.width/2,canvas.height/2-diff);
+                ctx.lineTo(canvas.width/2,canvas.height/2+diff);
+
+                diff2 = 4;
+                ctx.moveTo(canvas.width/2-diff,canvas.height/2+diff2);
+                ctx.lineTo(canvas.width/2-diff,canvas.height/2-diff2);
+
+                ctx.moveTo(canvas.width/2+diff,canvas.height/2+diff2);
+                ctx.lineTo(canvas.width/2+diff,canvas.height/2-diff2);
+
+                ctx.moveTo(canvas.width/2+diff2,canvas.height/2-diff);
+                ctx.lineTo(canvas.width/2-diff2,canvas.height/2-diff);
+
+                ctx.moveTo(canvas.width/2+diff2,canvas.height/2+diff);
+                ctx.lineTo(canvas.width/2-diff2,canvas.height/2+diff);
+                ctx.stroke();
+            }
+
+            function drawPoint(mousePos)  {
+                var canvas = document.getElementById('myCanvas');
+                var ctx = canvas.getContext('2d');
+
+                clearCanvas(mousePos);
+
+                var x = mousePos.x;
+                var y = mousePos.y;
+                var innerRadius = 10;
+                var outerRadius = 30;
+                var radius = 30;
+
+                var gradient = ctx.createRadialGradient(x, y, innerRadius, x, y, outerRadius);
+                gradient.addColorStop(0, '#555');
+                gradient.addColorStop(1, '#222');
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, 2 * Math.PI, false);
+                ctx.fillStyle = gradient; 
+                ctx.fill();
+            }
+
+            function getMotorFactor(canvas, pos) {
+
+                // -------------------------------
+                // |   F11    |   F12  |    F13  |
+                // | (.75,1)  | (1,1)  | (1,.75) |
+                // -------------------------------
+                // |    F21   |   F22  |    F23  |
+                // | (-.75,.75) | (0,0)  | (.75,-.75)|
+                // -------------------------------
+                // |    F31   |   F32  |    F33  |
+                // | (-.75,-1) | (-1,-1)| (-1,-.75)|
+                // -------------------------------
+
+                // Row 1
+                if (pos.y <= 5* canvas.height/12) {
+                    // Column 1
+                    if (pos.x < 5* canvas.width/12) {
+                        return {m1: .75, m2: 1, field: 11}
+                    } 
+                    // Columns 3
+                    else if (pos.x > 7* canvas.width/12) {
+                        return {m1: 1, m2: .75, field: 13}
+                    }
+                    // Column 2
+                    else {
+                        return {m1: 1, m2: 1, field: 12}
+                    }
+                } 
+                // Row 3
+                else if(pos.y >= 7* canvas.height/12) {
+                    // Column 1
+                    if (pos.x < 5* canvas.width/12) {
+                        return {m1: -.75, m2: -1, field: 31}
+                    } 
+                    // Columns 3
+                    else if (pos.x > 7* canvas.width/12) {
+                        return {m1: -1, m2: -.75, field: 33}
+                    }
+                    // Column 2
+                    else {
+                        return {m1: -1, m2: -1, field: 32}
+                    }
+                } 
+                // Row 2
+                else {
+                    // Column 1
+                    if (pos.x < 5* canvas.width/12) {
+                        return {m1: -.75, m2: .75, field: 21}
+                    } 
+                    // Columns 3
+                    else if (pos.x > 7* canvas.width/12) {
+                        return {m1: .75, m2: -.75, field: 23}
+                    }
+                    // Column 2
+                    else {
+                        return {m1: 0, m2: 0, field: 22}
+                    }
+                }
+
+                return {m1: 0, m2: 0};
+            }
+
+            function calcMotorPower(canvas, pos) {
+                var factor = getMotorFactor(canvas, pos);
+                // console.log("motor factor:" + JSON.stringify(factor));
+
+                var x = pos.x - canvas.width/2;
+                var y = pos.y - canvas.height/2;
+                x = Math.min(Math.max(x, -canvas.width/2), canvas.width/2);
+                y = Math.min(Math.max(y, -canvas.height/2), canvas.height/2);
+
+                // console.log("x: "+x+", y: "+y);
+
+                tc_x = Math.round(map(x, 0, canvas.width, -MAX_RANGE_X, MAX_RANGE_X));
+                tc_y = Math.round(map(y, 0, canvas.height, -MAX_RANGE_Y, MAX_RANGE_Y));
+
+                // console.log("tc_x: "+tc_x+", tc_y: "+tc_y);
+
+                if (factor.field == 12 ||factor.field == 32)  {
+                    m1 = Math.max(Math.min(factor.m1 * Math.abs(tc_y), MAX_RANGE_Y), -MAX_RANGE_Y);
+                    m2 = m1;
+                } 
+                else if (factor.field == 21 ||factor.field == 23)  {
+                    m1 = Math.max(Math.min(factor.m1 * Math.abs(tc_x), MAX_RANGE_X), -MAX_RANGE_X);
+                    m2 = Math.max(Math.min(factor.m2 * Math.abs(tc_x), MAX_RANGE_X), -MAX_RANGE_X);
+                }
+                else {
+                    m1 = Math.max(Math.min(factor.m1 * Math.abs(tc_y / tc_x) * MAX_RANGE_X, MAX_RANGE_X), -MAX_RANGE_X);
+                    m2 = Math.max(Math.min(factor.m2 * Math.abs(tc_y / tc_x) * MAX_RANGE_Y, MAX_RANGE_Y), -MAX_RANGE_Y);
+                }
+
+                return {m1: m1, m2: m2};
+            }
+
+            function createSessionId() {
+
+                updateConnectionStatus("Establish Session", "green");
+
+                var xhr = new XMLHttpRequest();
+                xhr.onreadystatechange = function() {
+                    // console.log("state: "+xhr.readyState);
+                    if (xhr.readyState === 4) {
+                        // console.log("response: "+xhr.responseText);
+                        if (xhr.status === 200) {
+                            SESSION_ID = xhr.responseText;
+                            sendPosition();
+                        }
+                        else {
+                            updateConnectionStatus("Session failed or lost. (Please, reload plage.)", "red");
+                        }
+                    }
+                    else {
+                        updateConnectionStatus("Session failed or lost. (Please, reload plage.)", "red");
+                    }
+                };
+
+                xhr.open('GET', "/sessionId", true);
+                xhr.send();
+            }
+
+            function updateConnectionStatus(status, color) {
+                var statusElem = document.getElementById('connection_status');
+                statusElem.textContent = status
+                statusElem.setAttribute('style', 'color: '+color+';');
+            }
+
+            function updateValues(pos){
+                var valuesElem = document.getElementById('values');
+                valuesElem.innerHTML = 
+                    "<b>x:</b> " + pos.x + 
+                    ", <b>y:</b> " + pos.y + 
+                    ", <b>M1: </b>" + Math.round(pos.m1) + 
+                    ", <b>M2:</b> " + Math.round(pos.m2);
+            }
+
+        </script>
+    </head>
+    <body>
+        <span style="width: 100%; text-align: center;">
+            <table>
+                <tr> <td><b>Status:</b></td> <td><b><span id="connection_status"></span></b></td> </tr>
+                <tr> <td><b>Values:</b></td> <td><span id="values"></span></td> </tr>
+            </table>>
+            <canvas id="myCanvas" width=800 height=800></canvas>
+        </div>
+
+        <script>
+            var canvas = document.getElementById('myCanvas');
+            clearCanvas(canvas);
+            updateValues(0,0,0,0);
+            // drawPoint({x: canvas.width/2, y: canvas.height/2});
+
+            canvas.addEventListener('mousemove', function (e) {
+                var mousePos = getMousePos(canvas, e);
+                drawPoint(mousePos);
+                updatePosition(canvas, mousePos);
+            });
+
+            canvas.addEventListener('touchmove', function (e) {
+
+                console.log(e);
+
+                var currentY = e.touches ?  e.touches[0].pageY : e.pageY;
+                var currentX = e.touches ?  e.touches[0].pageX : e.pageX;
+
+                var mousePos = getMousePos(canvas, {clientX: currentX, clientY: currentY});
+                drawPoint(mousePos);
+                updatePosition(canvas, mousePos);
+            });
+
+            createSessionId();
+        </script>
+    </body>
+</HTML>
+)====="
