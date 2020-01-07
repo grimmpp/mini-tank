@@ -42,3 +42,10 @@ The joystick is a [webpage](src/webpage/index.html) deployed on the ESP8266 and 
 * Battery 18650 3.7V
 * Some wires and screws
 * 3D printed parts
+  * 1x [Base.stl](3d-printer-parts/Base.stl)
+  * 1x [BatteryTray.stl](3d-printer-parts/BatteryTray.stl)
+  * 1x [boardSupport.stl](3d-printer-parts/boardSupport.stl)
+  * 2x [MasterWheelDC.stl](3d-printer-parts/MasterWheelDC.stl)
+  * 2x [slave_wheel.stl](3d-printer-parts/slave_wheel.stl)
+  * 32x [mechanical_track.stl](3d-printer-parts/mechanical_track.stl)
+  * 32x [bozen.stl](3d-printer-parts/bozen.stl)
